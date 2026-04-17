@@ -1,0 +1,16 @@
+[package]
+name = "kubectl-node-shell"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "kubectl-node_shell"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.6.1", features = ["derive"] }
+serde_json = "1.0.149"
+rand = "0.10.1"
+is-terminal = "0.4.17"
+ctrlc = { version = "3.5.2", features = ["termination"] }
+anyhow = "1.0.102"
