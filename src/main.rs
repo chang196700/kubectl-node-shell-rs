@@ -126,7 +126,7 @@ fn inner_run() -> Result<i32> {
 
     if let Some(pvc) = &cli.pvc {
         volumes.as_array_mut().unwrap().push(
-            json!({ "persistentVolumeClaim": { "claimName": pvc, "type": "" }, "name": "pvc" }),
+            json!({ "persistentVolumeClaim": { "claimName": pvc }, "name": "pvc" }),
         );
         volume_mounts
             .as_array_mut()

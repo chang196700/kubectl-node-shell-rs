@@ -127,5 +127,12 @@ pub fn run_pod(
         cmd.arg(g);
     }
     let status = cmd.status().context("failed to spawn kubectl run")?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(sig) = status.signal() {
+            return Ok(128 + sig);
+        }
+    }
     Ok(status.code().unwrap_or(1))
 }
