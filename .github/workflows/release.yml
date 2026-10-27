@@ -1,0 +1,182 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Serialize the entire release, including version calculation and builds.
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: release-plz@0.4.1
+
+      - name: Configure Git for release-plz's temporary stash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Calculate version and create local tag
+        id: version
+        run: python .github/scripts/release.py prepare
+
+  build:
+    needs: prepare
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-24.04
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-24.04
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+          - target: x86_64-apple-darwin
+            runner: macos-15-intel
+          - target: aarch64-apple-darwin
+            runner: macos-15
+          - target: x86_64-pc-windows-msvc
+            runner: windows-2025
+          - target: aarch64-pc-windows-msvc
+            runner: windows-11-arm
+    env:
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install musl toolchain
+        if: contains(matrix.target, 'musl')
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes musl-tools
+          variable="CARGO_TARGET_${TARGET^^}_LINKER"
+          echo "${variable//-/_}=musl-gcc" >> "$GITHUB_ENV"
+
+      - name: Inject version and recreate local tag at the source commit
+        run: |
+          python .github/scripts/release.py inject "$RELEASE_VERSION"
+          python .github/scripts/release.py tag "$RELEASE_VERSION"
+
+      - name: Build
+        run: cargo build --release --locked --target "$TARGET"
+
+      - name: Verify binary version
+        run: |
+          binary="target/$TARGET/release/kubectl-node_shell"
+          if [[ "$RUNNER_OS" == Windows ]]; then binary+=.exe; fi
+          actual_version=$("$binary" --version)
+          [[ "$actual_version" == "kubectl-node-shell $RELEASE_VERSION" ]]
+
+      - name: Package binary
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import tarfile
+          import zipfile
+
+          target = os.environ["TARGET"]
+          name = f'kubectl-node-shell-{os.environ["RELEASE_TAG"]}-{target}'
+          binary = "kubectl-node_shell" + (".exe" if os.name == "nt" else "")
+          files = [Path("target") / target / "release" / binary, Path("README.md")]
+          Path("dist").mkdir()
+          if os.name == "nt":
+              with zipfile.ZipFile(f"dist/{name}.zip", "w", zipfile.ZIP_DEFLATED) as archive:
+                  for path in files:
+                      archive.write(path, path.name)
+          else:
+              with tarfile.open(f"dist/{name}.tar.gz", "w:gz") as archive:
+                  for path in files:
+                      archive.add(path, arcname=path.name)
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          merge-multiple: true
+          path: dist
+
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum *.tar.gz *.zip > SHA256SUMS
+
+      - name: Push tag and publish release with all assets
+        run: |
+          python .github/scripts/release.py tag "$RELEASE_VERSION"
+          git push origin "refs/tags/$RELEASE_TAG"
+
+          if gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft' > "$RUNNER_TEMP/is-draft"; then
+            if [[ $(cat "$RUNNER_TEMP/is-draft") == false ]]; then
+              echo "Release $RELEASE_TAG is already published."
+              exit 0
+            fi
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --draft --title "$RELEASE_TAG" --generate-notes
+          fi
+
+          # Keep the release in draft until every asset has been uploaded.
+          gh release upload "$RELEASE_TAG" dist/* --clobber
+          gh release edit "$RELEASE_TAG" --draft=false --latest

@@ -1,0 +1,10 @@
+[workspace]
+# Only GitHub releases are published; never publish to a Cargo registry.
+git_only = true
+publish = false
+git_tag_name = "v{{ version }}"
+dependencies_update = false
+semver_check = false
+features_always_increment_minor = true
+# GitHub generates release notes, so no changelog commit is needed.
+changelog_update = false
