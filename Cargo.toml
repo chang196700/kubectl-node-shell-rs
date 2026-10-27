@@ -3,6 +3,7 @@ name = "kubectl-node-shell"
 # Release versions are injected by CI; the repository keeps this placeholder.
 version = "0.0.0"
 edition = "2024"
+license = "Apache-2.0"
 
 [[bin]]
 name = "kubectl-node_shell"

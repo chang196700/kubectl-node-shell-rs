@@ -118,7 +118,7 @@ jobs:
           target = os.environ["TARGET"]
           name = f'kubectl-node-shell-{os.environ["RELEASE_TAG"]}-{target}'
           binary = "kubectl-node_shell" + (".exe" if os.name == "nt" else "")
-          files = [Path("target") / target / "release" / binary, Path("README.md")]
+          files = [Path("target") / target / "release" / binary, Path("README.md"), Path("LICENSE")]
           Path("dist").mkdir()
           if os.name == "nt":
               with zipfile.ZipFile(f"dist/{name}.zip", "w", zipfile.ZIP_DEFLATED) as archive:

@@ -12,6 +12,7 @@ Opens a root shell in a Kubernetes node's host OS by launching an ephemeral priv
 
 Download an archive for your platform from [GitHub Releases](https://github.com/chang196700/kubectl-node-shell-rs/releases), extract it, and put `kubectl-node_shell` (or `kubectl-node_shell.exe` on Windows) on your `PATH`.
 Use `SHA256SUMS` from the same release to verify the download.
+Each archive includes the binary, `README.md`, and the Apache-2.0 `LICENSE`.
 
 | Platform | Architectures | Archive |
 |----------|---------------|---------|
@@ -117,4 +118,4 @@ Only the built-in `GITHUB_TOKEN` with `contents: write` is needed for publishing
 
 ## License
 
-Same as the original project — see [LICENSE](LICENSE).
+Licensed under the [Apache License, Version 2.0](LICENSE) (`Apache-2.0`).
